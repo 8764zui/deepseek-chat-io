@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         DeepSeek Chat Exporter
 // @namespace    https://github.com/8764zui/deepseek-chat-io
-// @version      1.1.0
+// @version      1.2.0
 // @description  一键导出 DeepSeek 对话为 JSON 文件（带日期文件名）
 // @author       Lumen
 // @match        https://chat.deepseek.com/*
@@ -16,15 +16,30 @@
   function extractChat() {
     const msgs = document.querySelectorAll('.ds-message');
     const messages = [];
-
     for (const el of msgs) {
       const main = el.querySelector('.ds-assistant-message-main-content');
       const content = (main || el).textContent.trim();
       if (!content) continue;
       messages.push({ role: main ? 'assistant' : 'user', content });
     }
-
     return messages;
+  }
+
+  // ── 标题清洗 ──────────────────────────────────────────
+
+  function cleanTitle(raw) {
+    var t = raw
+      .replace(/\s*-\s*DeepSeek.*$/i, '')   // 去掉 " - DeepSeek"
+      .replace(/\.[a-z0-9]{1,5}$/i, '')      // 去掉文件扩展名
+      .replace(/\.json.*/i, '')               // .json 后面的都砍掉
+      .replace(/\.txt.*/i, '')
+      .replace(/\[.*?\]/g, '')               // 去掉 [file name] 之类
+      .replace(/[{}\[\]":,=_<>|\\/*?]/g, '') // 去掉 JSON 特殊字符
+      .replace(/\s+/g, ' ')                  // 多空格合一
+      .trim();
+    // 截断到 30 字符
+    if (t.length > 30) t = t.substring(0, 30).replace(/\s+$/, '');
+    return t || 'chat';
   }
 
   // ── 导出 ──────────────────────────────────────────────
@@ -33,7 +48,8 @@
     const messages = extractChat();
     if (!messages.length) { toast('⚠️ 未检测到对话'); return; }
 
-    const title = document.title.replace(/\s*-\s*DeepSeek.*$/i, '').trim() || 'untitled';
+    const rawTitle = document.title || '';
+    const title = cleanTitle(rawTitle);
     const now = new Date();
     const pad = n => String(n).padStart(2, '0');
     const stamp = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}`;
@@ -42,7 +58,7 @@
     const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
     const a = Object.assign(document.createElement('a'), {
       href: URL.createObjectURL(blob),
-      download: `deepseek_${title.replace(/[\/\\:*?"<>|]/g,'_')}_${stamp}.json`
+      download: `deepseek_${title}_${stamp}.json`
     });
     document.body.appendChild(a); a.click(); a.remove();
     toast(`✅ 导出 ${messages.length} 条`);
@@ -67,10 +83,8 @@
   function inject() {
     const hdr = document.querySelector('.the-header, header');
     if (!hdr || document.querySelector('.ds-export-btn')) { setTimeout(inject, 1000); return; }
-
     const btn = Object.assign(document.createElement('button'), {
-      textContent: '📥 导出对话',
-      onclick: exportChat
+      textContent: '📥 导出对话', onclick: exportChat
     });
     Object.assign(btn.style, {
       padding:'6px 14px', background:'#4a6fa5', color:'#fff', border:'none',
